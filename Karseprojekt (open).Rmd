@@ -1,0 +1,286 @@
+---
+title: "Exploratory data analysis (Karse)"
+author: "Mars-gruppen"
+date: "2024-03-22"
+output: html_document
+---
+
+## Projektdefinering
+Dette projekt er lavet i forbindelse med kurset `Data Science` og omhandler dataopsamling, exploratory data analyse og data kommunikation. 
+
+### Basale informationer 
+```{r}
+#Studieretning: Biologi 
+#Gruppemedlemmer: Karl Andersen, Jens Emil Munck og Kristoffer Jakobsen 
+#Alias: Mars-gruppen
+```
+
+
+```{r, echo=FALSE, out.width="75%", fig.cap="**Figur 1:** Karseopstilling på Mars.", fig.align='center'}
+knitr::include_graphics("~/Documents/Biologi 6. semester/Data science/data/Mars opstilling.jpg")
+```
+
+
+## Libraries
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+```
+
+## Indlæs data
+Vi er det ene af de to eneste succesfulde hold udsendinge for NASA til Mars, med missionen at undersøge mulighederne for kolonisering af Mars. Vi var et større antal hold, der skulle undersøge mulighederne med hver vores specifikke opgave. De andre hold gik tabt undervejs af forskellige årsager, vores informationer fra HQ om disse forhold er meget begrænsede, nogle brændte op i forsøget på at bryde gennem jordens atmosfære, ved nogle gik det galt under landingen på Mars, andre er af ukendte årsager, men vi mistænker at NASA tilbageholder en del informationer. Dog stod vores holds mission stadig meget klar, vi skulle undersøge om Mars' atmosfære kunne understøtte vækst af planten karse (*Lepidium sativum*), uden brug af hjælpemidler til at påvirke plantens gasudveksling til omgivelserne.
+
+
+### Naturligt lys
+Ved vores første opgave opstillede vi karsen ude i den fri luft på Mars uden nogen form for påvirkning. Vi plantede karsen i det standard udleverede gromedie, vat, og ville undersøge hvordan det naturlige lysindfald på Mars ville påvirke plantens vækst, når den følger den naturlige døgncyklus.  
+```{r, message=F, warning=F}
+Naturligt_lys <- read_delim(file = "~/Documents/Biologi 6. semester/Data science/data/ONL.TXT", delim = "\t",col_names = TRUE) %>% 
+  rename(Distance = `Distance (mm)`) %>%
+  rename(Luftfugtighed=`Luftfugtighed (%)`) %>%
+  rename(Lys=`Lys (%)`)%>%
+  rename(Temperatur=`Temperatur (C)`)%>%
+  mutate(
+    Temperatur = as.numeric(Temperatur),
+    Luftfugtighed = as.numeric(Luftfugtighed),
+    Lys = as.numeric(Lys),
+    Distance = as.numeric(Distance)
+  ) %>% 
+  filter(!is.na(Temperatur) & !is.na(Luftfugtighed) & !is.na(Lys) & !is.na(Distance)) %>%
+  mutate(Vækst = (max(Distance, na.rm = TRUE) - Distance)/10) %>%
+  filter(Dato != "Dato") %>%
+  mutate(experiment = "Naturligt_lys", 
+         dato_tidspunkt = dmy_hms(paste(Dato, Tidspunkt)),
+         dato_min = round_date(dato_tidspunkt, unit = "5 min"),
+         Vækst = (max(Distance)-Distance)/10) %>%
+  filter(!(dato_tidspunkt - min(dato_tidspunkt) < hours(5) & Vækst > 0.9))%>%
+  select(-Dato, -Tidspunkt)%>%
+  pivot_longer(cols = c(Temperatur, Luftfugtighed, Lys, Vækst)) %>%
+  group_by(dato_min, name, experiment) %>%
+  summarise(mean = mean(value)) %>%
+  ungroup() %>%
+  mutate(delta_tid=dato_min-min(dato_min))
+```
+
+
+### Kunstigt/konstant lys 
+Efter det veludførte forsøg med Mars' naturlige døgncyklus, undrede vi os om mørkeperioden mon sænkede væksthastigheden for karsen. Derfor opstillede vi et forsøg, hvor vi fjernede mørkeperioden, og gav planten konstant lys i hele forsøgsperioden. For at sørge for at lysintensiteten skulle være helt ens under hele forløbet, fjernede vi lysindfaldet fra det naturlige lys, og tillod kun vores kunstige hvide lys, der skulle simulere sollys og energi til dagen, samtidig med at den er flimmerfri. Lampen var af LED-paneler og et certificeret medicinsk produkt, specielt produceret til vækstforsøget af NASA inden afrejsen.
+
+```{r, message=F, warning=F}
+Konstant_lys <- read_delim(file = "~/Documents/Biologi 6. semester/Data science/data/OAL.TXT", delim = "\t") %>%
+  rename(Distance = `Distance (mm)`) %>%
+  rename(Luftfugtighed=`Luftfugtighed (%)`) %>%
+  rename(Lys=`Lys (%)`)%>%
+  rename(Temperatur=`Temperatur (C)`)%>%
+  filter(Dato != "Dato") %>%
+  mutate(experiment = "Konstant_lys", dato_tidspunkt = dmy_hms(paste(Dato, Tidspunkt)),
+         dato_min = round_date(dato_tidspunkt, unit="5 min"),
+         Vækst=(max(Distance)-Distance)/10) %>%
+  select(-Dato, -Tidspunkt)%>%
+  filter(!(Distance < 170))%>%
+  pivot_longer(cols = c(Temperatur, Luftfugtighed, Lys, Vækst)) %>%
+  group_by(dato_min, name, experiment) %>%
+  summarise(mean = mean(value)) %>%
+  ungroup() %>%
+  mutate(delta_tid=dato_min-min(dato_min))
+```
+
+### Mørke
+Vi fandt at fjernelsen af mørkeperioden ikke ændrede meget for plantens vækst, så for at finde de bedst optimale forhold der stimulerede hurtigst mulig vækst, undersøgte vi om lysperioden mon inhiberede plantens vækst. Så vi mørklagde forsøget komplet med en lysintensitet ned til 0%. Vi brugte stadig det udleverede standardmedie, vat.
+```{r, message=F, warning=F}
+Mørke <- read_delim(file = "~/Documents/Biologi 6. semester/Data science/data/OD2.TXT", delim = "\t") %>%
+  rename(Distance = `Distance (mm)`) %>%
+  rename(Luftfugtighed=`Luftfugtighed (%)`) %>%
+  rename(Lys=`Lys (%)`)%>%
+  rename(Temperatur=`Temperatur (C)`)%>%
+  filter(Dato != "Dato") %>%
+  mutate(experiment = "Mørke", dato_tidspunkt = dmy_hms(paste(Dato, Tidspunkt)),
+         dato_min = round_date(dato_tidspunkt, unit="5 min"),
+         Vækst=(max(Distance)-Distance)/10) %>%
+    filter(!(dato_tidspunkt - min(dato_tidspunkt) < hours(2) & Vækst < 0.1))%>%
+  select(-Dato, -Tidspunkt) %>%
+  pivot_longer(cols = c(Temperatur, Luftfugtighed, Lys, Vækst)) %>%
+  group_by(dato_min, name, experiment) %>%
+  summarise(mean = mean(value)) %>%
+  ungroup() %>%
+  mutate(delta_tid=dato_min-min(dato_min))
+```
+
+### Kaffe
+Vi har nu kørt de obligatoriske eksperimenter som ordren fra NASA lød på. Rationerne for opholdet er ved at løbe tør, men holdets morale er exceptionel. De vil fortsætte forsøget og sætter missionen før manden. Mørkeforsøget var en succes set på vækstraten, men planten var tæt på ubrugelig, den blev gul og tynd. Vores rationer er næsten i bund, det eneste vi har tilbage er kaffe, som vi er nødt til at leve af de sidste dage, da et af vores forsøg slog fejl og kostede os dyrebar tid. At udtage kaffe til det sidste forsøg, betød at en af besætningsmedlemmerne måtte ofre sig. Kristoffer meldte sig uden tøven. Han var villig til at donere hans ration af kaffe til ære for missionen. Vi er taknemmelige for hans heroiske vilje og motivation for forsøget, og hans store ofring for videnskaben og koloniseringen af Mars vil aldrig blive glemt.
+Takket være Kristoffer, opstillede vi forsøget med vækst af karse på hans kafferationer. For at få den forventede højeste kvalitet af planten, vurderede vi at det naturlige lys og døgncyklus på Mars ville give os de bedste resultater. Forsøget blev opstillet med kaffe som gromedie og uden påvirkning på plantens omgivelser. Forsøget var en succés. Æret være Kristoffer.
+```{r, message=F, warning=F}
+Kaffe <- read_delim(file = "~/Documents/Biologi 6. semester/Data science/data/OC.TXT", delim = "\t") %>%
+  rename(Distance = `Distance (mm)`) %>%
+  rename(Luftfugtighed=`Luftfugtighed (%)`) %>%
+  rename(Lys=`Lys (%)`)%>%
+  rename(Temperatur=`Temperatur (C)`)%>%
+  filter(Dato != "Dato") %>%
+  mutate(experiment = "Kaffe", dato_tidspunkt = dmy_hms(paste(Dato, Tidspunkt)),
+         dato_min = round_date(dato_tidspunkt, unit="5 min"),
+         Vækst=(max(Distance)-Distance)/10) %>%
+  select(-Dato, -Tidspunkt) %>%
+  filter(dato_tidspunkt < "2024-03-16 15:25:00") %>%
+  pivot_longer(cols = c(Temperatur, Luftfugtighed, Lys, Vækst)) %>%
+  group_by(dato_min, name, experiment) %>%
+  summarise(mean = mean(value)) %>%
+  ungroup() %>%
+  mutate(delta_tid=dato_min-min(dato_min))
+```
+ 
+## Kombiner forsøgsdata 
+```{r, message=F, warning=F}
+d <- rbind.data.frame(Naturligt_lys,Konstant_lys, Mørke, Kaffe) %>%
+  mutate(delta_tid = as.numeric(delta_tid)/3600)
+```
+
+## Opstilling af unikt tema
+```{r, message=F}
+mytheme <-  theme_classic() +
+            theme(panel.grid.major = element_line(color = "grey90"),
+                  plot.title = element_text(face = "bold", size = 22),
+                  plot.subtitle = element_text(face = "italic", size = 8, color = "grey70"),
+                  plot.caption =  element_text(face = "italic", size = 8, color = "grey70"),
+                  panel.background = element_rect(fill = "grey97"),
+                  legend.position = "none", 
+                  strip.background = element_rect(fill = "grey93", color = NA))
+```
+
+## Opstilling af multivariable plots for fugtighed, lys, temperatur og vækst:
+### Samlet
+```{r, message=F}
+dp <- d %>% 
+  mutate(name = fct_relevel(as.factor(name), c("Vækst", "Lys", "Luftfugtighed", "Temperatur"))) %>%
+  mutate(name = recode(name, 
+                       "Vækst" = "Vækst [cm]", 
+                       "Lys" = "Lysintensitet [%]", 
+                       "Temperatur" = "Temperature [°C]", 
+                       "Luftfugtighed" = "Luftfugtighed [%]"))
+
+custom_legend <- data.frame(name = rep("Vækst [cm]",4),
+                            mean = c(5.5,4.5,3.5,2.5),
+                            delta_tid = rep(0,4),
+                            legend = c("Kaffe", "Konstant_lys", "Mørke", "Naturligt_lys"))
+
+legend_color <- c(scales::brewer_pal(palette = "Blues")(5)[3:4],
+                  scales::brewer_pal(palette = "Reds")(5)[4:5])
+
+ggplot(dp, aes(x = delta_tid, y = mean, color = experiment)) +
+  geom_point(size = 1) +
+  facet_grid(rows = "name", scales = "free_y") +
+  scale_x_continuous(name = "Timer") +
+  scale_color_manual(values = legend_color) +
+  labs(title = "Det Store Karseforsøg",
+       subtitle = paste("Udført af Mars-gruppen")) +
+  mytheme +
+  geom_text(data = custom_legend, 
+            aes(label = legend), 
+            hjust = 0, color = legend_color, fontface = "bold") +
+  guides(colour = guide_legend(override.aes = list(size=3))) +
+  theme(axis.title.y = element_blank())
+```
+
+Her ses den multivariable plot der visualiserer alle de undersøgte og overvågede parametre under ekspeditionens eksperimenter. Som forventet var lysintensitet konstant under mørke og kunstigt lys eksperimenterne. Væksten hos kaffe var som det eneste eksperiment i minus, antageligt grundet udtørring og sammentrækning af mediet, der resulterer i den faldende hældning.
+
+## Lineær regression 
+```{r, message=F}
+dw <- d %>%
+  pivot_wider(names_from = name, values_from = mean)
+
+dw_subset <- dw %>% 
+  filter(!(experiment == "Naturligt_lys" & (delta_tid < 80 | delta_tid > 97))) %>%
+  filter(!(experiment == "Konstant_lys" & (delta_tid < 80 | delta_tid > 97))) %>%
+  filter(!(experiment == "Mørke" & (delta_tid < 80 | delta_tid > 97))) %>%
+  filter(!(experiment == "Kaffe" & (delta_tid < 25 | delta_tid > 42)))
+
+p <- ggplot(dw, aes(x = delta_tid, y = Vækst, group = experiment, color = experiment)) +
+  geom_point(size = 1) +
+  scale_color_manual(values = legend_color) +
+  geom_smooth(data = dw_subset, method = "lm", color = "black", linewidth = 1, se = F) +
+  facet_wrap(~experiment, ncol = 1) +
+  labs(x = "Timer", y = "Vækst [cm]") +
+  mytheme
+
+```
+
+Her ses vækstraten ved de fire forskellige eksperimenter, værd at påpege er den faldende graf for kaffe som gromedie.
+
+```{r, message=F}
+lm_naturligt_lys1 <- lm(data = dw_subset %>% filter(experiment == "Naturligt_lys"), formula = Vækst~delta_tid)
+lm_mørke2 <- lm(data = dw_subset %>% filter(experiment == "Mørke"), formula = Vækst~delta_tid)
+lm_konstant_lys3 <- lm(data = dw_subset %>% filter(experiment == "Konstant_lys"), formula = Vækst~delta_tid)
+lm_kaffe1 <- lm(data = dw_subset %>% filter(experiment == "Kaffe"), formula = Vækst~delta_tid)
+```
+
+```{r, echo = F}
+library(moderndive) #normalt vil jeg altid loade alle pakker i starten af koden.
+
+lm_naturligt_lys1_table <- get_regression_table(lm_naturligt_lys1, digits = 3) %>% mutate(experiment = "Naturligt_lys")
+lm_mørke2_table <- get_regression_table(lm_mørke2, digits = 3) %>% mutate(experiment = "Mørke")
+lm_konstant_lys3_table <- get_regression_table(lm_konstant_lys3, digits = 3) %>% mutate(experiment = "Konstant_lys")
+lm_kaffe1_table <- get_regression_table(lm_kaffe1, digits = 3) %>% mutate(experiment = "Kaffe")
+
+lm_rt <- rbind.data.frame(lm_naturligt_lys1_table, lm_mørke2_table, lm_konstant_lys3_table, lm_kaffe1_table) %>% filter(term == "delta_tid")
+
+lm_naturligt_lys1_rs <- get_regression_summaries(lm_naturligt_lys1, digits = 3)  %>% mutate(experiment = "Naturligt_lys")
+lm_mørke2_rs <- get_regression_summaries(lm_mørke2, digits = 3) %>% mutate(experiment = "Mørke")
+lm_konstant_lys3_rs <- get_regression_summaries(lm_konstant_lys3, digits = 3) %>% mutate(experiment = "Konstant_lys")
+lm_kaffe1_rs <- get_regression_summaries(lm_kaffe1, digits = 3) %>% mutate(experiment = "Kaffe")
+
+lm_rs <- rbind.data.frame(lm_naturligt_lys1_rs, lm_mørke2_rs, lm_konstant_lys3_rs, lm_kaffe1_rs)
+
+lm_stats <- cbind.data.frame(lm_rt %>% select(experiment, slope = estimate, lower_ci, upper_ci),
+                          lm_rs %>% select(r_squared))
+```
+
+### Plot residualer fra modellen
+
+
+```{r, echo = F, message=F}
+lm_naturligt_lys1_rp <- get_regression_points(lm_naturligt_lys1) %>% mutate(experiment = "Naturligt_lys")
+lm_mørke2_rp <- get_regression_points(lm_mørke2) %>% mutate(experiment = "Mørke")
+lm_konstant_lys3_rp <- get_regression_points(lm_konstant_lys3) %>% mutate(experiment = "Konstant_lys")
+lm_kaffe1_rp <- get_regression_points(lm_kaffe1) %>% mutate(experiment = "Kaffe")
+
+rp <- rbind.data.frame(lm_naturligt_lys1_rp, lm_mørke2_rp, lm_konstant_lys3_rp, lm_kaffe1_rp)
+
+ggplot(rp, aes(x=residual, group = experiment, fill = experiment)) +
+  geom_histogram() +
+  facet_wrap(~experiment) +
+  scale_fill_manual(values = legend_color) +
+  mytheme
+```
+
+Her er visualiseret histogrammer over eksperimentets residualer. Det ses at kun kaffe er normalfordelt, hvor Kunstigt_lys er left-skewed, mørke er right-skewed, og Naturligt_lys er right-skewed.
+
+
+
+## Tabel med ekstraherede stats 
+```{r, echo=F}
+exp_stats <- dw %>% group_by(experiment) %>% 
+  summarise(max_growth = round(max(Vækst, na.rm = T),2), 
+            mean_temp = round(mean(Temperatur, na.rm = T),1), 
+            mean_fugtighed = round(mean(Luftfugtighed, na.rm = T),1)  ,
+            mean_lys = round(mean(Lys, na.rm = T),1) ) 
+
+
+stats <- left_join(lm_stats, exp_stats, by = "experiment")
+
+tibble(stats)
+```
+
+## Erfaringer fra ekspedition, potentialet for Mars som extraterrestial koloni 
+På ekspeditionen oplevede vi to katastrofale hændelser, der ændrede udkommet fra ekspeditionen. Vores kode til måleudstyret slog fejl under tidsangivelsen på vores RTC clock modul, der gjorde at vores første forsøg ikke kunne dokumenteres til videnskabelige standarder. Denne fejl førte til at mørkeforsøget måtte kasseres i første omgang, og dyrebar tid blev brugt på at gentage forsøget, så dataen kunne bruges og konkluderes på af NASA. Desværre ledte denne fejl til at rationerne løb op, og vores kære besætningsmedlem, Kristoffer, måtte ofre sig for at donere sine rationer, til videnskaben.
+Heldigvis var forsøget et videnskabeligt gennembrud, og det kunne konkluderes at kaffe i Mars' atmosfære ikke var et egnet medie til vækst, da vi ingen spiring så overhovedet.
+Æret være Kristoffers minde.
+
+## Arduino kode 
+````{r}
+readLines(con = "~/Documents/Biologi 6. semester/Data science/data/OAL (1).ino") %>%
+  cat(sep = '\n')
+````
+
+## Session info 
+```{r, message=F}
+sessionInfo()
+```
